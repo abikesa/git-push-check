@@ -1,64 +1,80 @@
 import os
-from pathlib import Path
 import humanize
-from collections import defaultdict
+import shutil
 
-# Thresholds
-SIZE_THRESHOLD_MB = 50  # flag files larger than 50MB
-TOP_N_LARGEST = 15       # number of largest files to show
+MAX_SIZE_BYTES = 1.5 * (1024**3)  # 1.5 GB
 
-# Directories to ignore
-IGNORE_DIRS = {'.git', '__pycache__', 'venv', '_build'}
+# Directories to delete (common junk)
+ARTIFACT_DIRS = ['_build', '__pycache__', '.ipynb_checkpoints']
+GITIGNORE_SUGGEST = ['*.mp4', '*.zip', '*.pptx', '*.pdf', '_build/', '__pycache__/', '.ipynb_checkpoints/']
 
-def get_file_sizes(start_path='.'):
-    large_files = []
-    folder_sizes = defaultdict(int)
-    total_size = 0
 
-    for dirpath, dirnames, filenames in os.walk(start_path):
-        # Skip ignored dirs
-        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
-
+def get_dir_size(path):
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(path):
         for f in filenames:
-            fp = os.path.join(dirpath, f)
             try:
-                size = os.path.getsize(fp)
-            except OSError:
-                continue  # skip broken symlinks or permission errors
+                fp = os.path.join(dirpath, f)
+                total += os.path.getsize(fp)
+            except:
+                pass
+    return total
 
-            total_size += size
-            folder_sizes[dirpath] += size
-            if size > SIZE_THRESHOLD_MB * 1024 * 1024:
-                large_files.append((fp, size))
+def find_large_files(root, limit=100*1024*1024):  # 100MB+
+    large_files = []
+    for dirpath, _, filenames in os.walk(root):
+        for f in filenames:
+            try:
+                full_path = os.path.join(dirpath, f)
+                size = os.path.getsize(full_path)
+                if size > limit:
+                    large_files.append((size, full_path))
+            except:
+                pass
+    return sorted(large_files, reverse=True)
 
-    return total_size, folder_sizes, sorted(large_files, key=lambda x: x[1], reverse=True)
+def top_folders_by_size(root, top_n=15):
+    folder_sizes = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        size = get_dir_size(dirpath)
+        if size > 100*1024*1024:  # Only show big folders
+            folder_sizes.append((size, dirpath))
+    return sorted(folder_sizes, reverse=True)[:top_n]
+
+def delete_artifact_dirs(root):
+    print("\n🧹 Deleting known artifact directories...")
+    for dirpath, dirnames, filenames in os.walk(root):
+        for d in ARTIFACT_DIRS:
+            full = os.path.join(dirpath, d)
+            if os.path.exists(full):
+                print(f"   🔥 Removing: {full}")
+                try:
+                    shutil.rmtree(full)
+                except Exception as e:
+                    print(f"   ❌ Could not delete {full}: {e}")
+
+def suggest_gitignore():
+    print("\n✍️ Suggested additions to your .gitignore:")
+    for entry in GITIGNORE_SUGGEST:
+        print(f"   {entry}")
 
 def main():
-    print("📦 Auditing repo size...")
+    print("📦 Auditing repo size...\n")
+    total_size = get_dir_size(".")
+    print(f"📏 Total repo size: {humanize.naturalsize(total_size)}")
 
-    total_size, folder_sizes, large_files = get_file_sizes()
-
-    print(f"\n📏 Total repo size: {humanize.naturalsize(total_size)}")
-
-    # Top heavy folders
-    sorted_folders = sorted(folder_sizes.items(), key=lambda x: x[1], reverse=True)[:TOP_N_LARGEST]
     print("\n📁 Top folders by size:")
-    for path, size in sorted_folders:
+    for size, path in top_folders_by_size("."):
         print(f"  {humanize.naturalsize(size):>10} — {path}")
 
-    # Top large files
     print("\n🧱 Large individual files:")
-    for path, size in large_files[:TOP_N_LARGEST]:
+    for size, path in find_large_files("."):
         print(f"  {humanize.naturalsize(size):>10} — {path}")
 
-    if total_size > 1.5 * 1024**3:
+    if total_size > MAX_SIZE_BYTES:
         print("\n🚨 Repo is over 1.5GB — consider pruning or using Git LFS for large binaries.")
+        delete_artifact_dirs(".")
+        suggest_gitignore()
 
-    # Suggested deletions
-    print("\n🗑️ Suggested deletions (build artifacts, notebook outputs):")
-    for path, size in large_files:
-        if any(sub in path for sub in ['_build', 'jupyter_execute']) or path.endswith(('.png', '.ipynb')):
-            print(f"  {humanize.naturalsize(size):>10} — {path}")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
