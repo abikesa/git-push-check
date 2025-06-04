@@ -1,6 +1,3 @@
-You're hitting a classic GitHub choke point: large, uncompressed build artifacts and notebooks bloating your Git history. To avoid pushing a 1.3+ GiB tarball of noise, here's an intelligent and aggressive Python script that recursively scans your repo, computes size totals, flags the heaviest files and folders, and offers actionable pruning.
-
----
 
 ## 🔍 `prune_check.py`: Smart Pre-Git Push Repo Size Audit
 
@@ -115,6 +112,3 @@ fi
 
 Then alias `git-push-safe` to that.
 
----
-
-Want me to turn this into a VSCode extension or add Git LFS automation next?
